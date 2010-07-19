@@ -683,15 +683,21 @@ void SV_Init (void) {
 	SV_AddOperatorCommands ();
 
 	// serverinfo vars
+	sv_luaonstartup = Cvar_Get ("sv_luaonstartup", "1", CVAR_LATCH);
+	//Start Lua
+	SV_startLua();
+	
 	Cvar_Get ("dmflags", "0", CVAR_SERVERINFO);
 	Cvar_Get ("fraglimit", "20", CVAR_SERVERINFO);
 	Cvar_Get ("timelimit", "0", CVAR_SERVERINFO);
 	sv_gametype = Cvar_Get ("g_gametype", "0", CVAR_SERVERINFO | CVAR_LATCH );
+	lua_getglobal(LS, sv_gametype->string);
 	Cvar_Get ("sv_keywords", "", CVAR_SERVERINFO);
 	Cvar_Get ("protocol", va("%i", PROTOCOL_VERSION), CVAR_SERVERINFO | CVAR_ROM);
 	sv_mapname = Cvar_Get ("mapname", "nomap", CVAR_SERVERINFO | CVAR_ROM);
 	sv_privateClients = Cvar_Get ("sv_privateClients", "0", CVAR_SERVERINFO);
 	sv_hostname = Cvar_Get ("sv_hostname", "noname", CVAR_SERVERINFO | CVAR_ARCHIVE );
+	lua_getglobal(LS, sv_hostname->string);
 	sv_maxclients = Cvar_Get ("sv_maxclients", "8", CVAR_SERVERINFO | CVAR_LATCH);
 
 	sv_minRate = Cvar_Get ("sv_minRate", "0", CVAR_ARCHIVE | CVAR_SERVERINFO );
@@ -764,6 +770,8 @@ void SV_Init (void) {
 	// HEARTBEAT stuff is also handled in SV_Frame(), who knows; but we found
 	// a better way: SV_Startup() and SV_SpawnServer(), check the code there!
 
+	sv_luaonstartup = Cvar_Get ("sv_luaonstartup", "1", CVAR_LATCH);
+	
 	// initialize bot cvars so they are listed and can be set before loading the botlib
 	SV_BotInitCvars();
 
@@ -791,7 +799,9 @@ to totally exit after returning from this function.
 void SV_FinalMessage( char *message ) {
 	int			i, j;
 	client_t	*cl;
-	
+	if (sv_luaonstartup->integer > 0 && LS_running) {
+		SV_stopLua();
+	}
 	// send it twice, ignoring rate
 	for ( j = 0 ; j < 2 ; j++ ) {
 		for (i=0, cl = svs.clients ; i < sv_maxclients->integer ; i++, cl++) {

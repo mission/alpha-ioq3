@@ -21,7 +21,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include "server.h"
-
 /*
 ===============================================================================
 
@@ -157,6 +156,28 @@ static client_t *SV_GetPlayerByNum( void ) {
 	}
 	return cl;
 }
+
+static void SV_LuaScript_f( void ) {
+	int status;
+	char	filename[MAX_QPATH];
+	if (LS_running) {
+		if (Cmd_Argc() < 2) {
+			Com_Printf("Usage: lua <scriptname>\n");
+			return;
+		}
+		Q_strncpyz( filename, Cmd_Argv(1), sizeof( filename ) );
+		COM_DefaultExtension( filename, sizeof( filename ), ".lua" );
+		Com_Printf(va("Running %s/q3ut4/lua/%s\n", Sys_DefaultInstallPath(), Cmd_Argv(1)));
+		status = luaL_dofile(LS, va("%s/q3ut4/lua/%s", Sys_DefaultInstallPath(), Cmd_Argv(1)));
+		if (status) {
+			Com_Printf(va("Error: %s\n", lua_tostring(LS, -1)));
+		}
+	}
+	else {
+		Com_Printf("Lua not running!\n");
+	}
+}
+
 
 //=========================================================
 
@@ -1929,6 +1950,8 @@ void SV_AddOperatorCommands( void ) {
 
 	Cmd_AddCommand("startserverdemo", SV_StartServerDemo_f);
 	Cmd_AddCommand("stopserverdemo", SV_StopServerDemo_f);
+	
+	Cmd_AddCommand("lua", SV_LuaScript_f);
 }
 
 /*

@@ -86,6 +86,9 @@ int rconWhitelistCount = 0;
 cvar_t	*sv_tellprefix;
 cvar_t	*sv_sayprefix;
 
+cvar_t	*sv_luaonstartup;
+lua_State		*LS;
+qboolean		LS_running;
 /*
 =============================================================================
 

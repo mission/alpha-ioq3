@@ -25,7 +25,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../qcommon/qcommon.h"
 #include "../game/g_public.h"
 #include "../game/bg_public.h"
-
+#include <lua/lua.h>
+#include <lua/lauxlib.h>
+#include <lua/lualib.h>
 //=============================================================================
 
 #define	PERS_SCORE				0		// !!! MUST NOT CHANGE, SERVER AND
@@ -91,6 +93,7 @@ typedef struct {
 
 	int				restartTime;
 	int				time;
+	
 } server_t;
 
 
@@ -319,6 +322,9 @@ extern	cvar_t	*sv_tellprefix;
 extern	cvar_t	*sv_voip;
 #endif
 
+extern	cvar_t	*sv_luaonstartup;
+extern	lua_State		*LS;
+extern	qboolean		LS_running;
 //===========================================================
 
 //
@@ -427,6 +433,17 @@ int BotImport_DebugPolygonCreate(int color, int numPoints, vec3_t *points);
 void BotImport_DebugPolygonDelete(int id);
 
 void SV_BotInitBotLib(void);
+
+//
+//sv_lua
+//
+
+int LuaPrint ( lua_State *L );
+int LuaCbuf_AddText ( lua_State *L );
+int LuaCbuf_ExecuteText ( lua_State *L );
+
+void SV_startLua(void);
+void SV_stopLua(void);
 
 //============================================================
 //

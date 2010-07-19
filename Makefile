@@ -476,7 +476,7 @@ ifeq ($(PLATFORM),mingw32)
   ifeq ($(shell test -e $(CMDIR)/wspiapi.h; echo $$?),1)
     BASE_CFLAGS += -DWINVER=0x501
   endif
-
+  CLIENT_CFLAGS += -DLUA_DL_DLL
   ifeq ($(USE_OPENAL),1)
     CLIENT_CFLAGS += -DUSE_OPENAL
     CLIENT_CFLAGS += $(OPENAL_CFLAGS)
@@ -512,9 +512,9 @@ ifeq ($(PLATFORM),mingw32)
 
   BINEXT=.exe
 
-  LIBS= -lws2_32 -lwinmm -lpsapi
+  LIBS= -lws2_32 -lwinmm -lpsapi "../mingw/bin/lua51.dll"
   CLIENT_LDFLAGS = -mwindows
-  CLIENT_LIBS = -lgdi32 -lole32 -lopengl32
+  CLIENT_LIBS = -lgdi32 -lole32 -lopengl32 -lua51
 
   ifeq ($(USE_CURL),1)
     CLIENT_CFLAGS += -DUSE_CURL
@@ -1630,6 +1630,7 @@ Q3DOBJ = \
   $(B)/ded/sv_net_chan.o \
   $(B)/ded/sv_snapshot.o \
   $(B)/ded/sv_world.o \
+  $(B)/ded/sv_lua.o \
   \
   $(B)/ded/cm_load.o \
   $(B)/ded/cm_patch.o \
