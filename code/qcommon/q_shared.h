@@ -134,6 +134,14 @@ typedef int intptr_t;
 #include <ctype.h>
 #include <limits.h>
 
+#ifdef _WIN32
+  #define Q_vsnprintf _vsnprintf
+  #define Q_snprintf _snprintf
+#else
+  #define Q_vsnprintf vsnprintf
+  #define Q_snprintf snprintf
+#endif
+
 #ifdef _MSC_VER
   #include <io.h>
 
