@@ -560,6 +560,21 @@ and all connected players.  Used for getting detailed information after
 the simple info query.
 ================
 */
+
+/* Added per ip timeout! Rough fix */
+
+typedef struct cl_ip_tout
+{
+	uint8_t count;
+	uint32_t time;
+	uint32_t ip;
+
+} cl_ip_tout;
+
+cl_ip_tout *cit_array = 0;
+uint8_t     cit_count = 0;
+
+
 static void SVC_Status( netadr_t from ) {
 	char	player[1024];
 	char	status[MAX_MSGLEN];
@@ -590,6 +605,65 @@ static void SVC_Status( netadr_t from ) {
 		return;
 	}
 
+		uint32_t from_ip_as_int = *((uint32_t*)from.ip);
+	cl_ip_tout *match = NULL;
+
+	// check for timed out clients.
+	// also check if the ip is already known (multiple queries or DRDOS)
+	for (i=0; i < cit_count; i++)
+	{
+		if (cit_array[i].time < svs.time) // timeout?
+		{
+			cit_array[i].ip = 0; // -> drop
+		}
+		else if (cit_array[i].ip == from_ip_as_int) // match found.
+		{
+			match = &cit_array[i];
+			break;
+		}
+	}
+
+	if (cit_count >= 32) // Prevent mass flooding. Max allowed packets: 32*5 per 2 seconds.
+		return;
+
+	// is the last entry of our array empty? If yes, drop.
+	if (cit_count > 0 && cit_array[cit_count-1].ip == 0) // resize our array.
+	{
+		cit_count--;
+		cit_array = realloc(cit_array, cit_count*sizeof(cl_ip_tout));
+	}
+
+	if (match != NULL) // now that we've found our match.
+	{
+		match->count++;
+		if (match->count > 5)
+		{
+			return; // ignore spammers.
+		}
+	}
+	else  // new client
+	{
+		for (i=0; i < cit_count; i++) // check for empty array slots.
+		{
+			if (cit_array[i].ip == 0) // empty slot found.
+			{
+				match = &cit_array[i];
+				break;
+			}
+		}
+
+		if (match == NULL) // array full -> resizing array.
+		{
+			cit_count++;
+			cit_array = realloc(cit_array, cit_count*sizeof(cl_ip_tout));
+			match = &cit_array[cit_count-1];
+		}
+
+		match->count = 1; // set data.
+		match->ip    = from_ip_as_int;
+		match->time  = svs.time + 2000;
+	}
+	
 	strcpy( infostring, Cvar_InfoString( CVAR_SERVERINFO ) );
 
 	// echo back the parameter to status. so master servers can use it as a challenge
@@ -635,6 +709,65 @@ void SVC_Info( netadr_t from ) {
 		return;
 	}
 
+	        uint32_t from_ip_as_int = *((uint32_t*)from.ip);
+        cl_ip_tout *match = NULL;
+
+        // check for timed out clients.
+        // also check if the ip is already known (multiple quries or DRDOS)
+        for (i=0; i < cit_count; i++)
+        {
+                if (cit_array[i].time < svs.time) // timeout?
+                {
+                        cit_array[i].ip = 0; // -> drop.
+                }
+                else if (cit_array[i].ip == from_ip_as_int) // match found.
+                {
+                        match = &cit_array[i];
+                        break;
+                }
+        }
+
+        if (cit_count >= 32) // Prevent mass flooding. Max allowed packets: 32*5 per 2 seconds.
+                return;
+
+        // is the last entry of our array empty? If yes, drop.
+        if (cit_count > 0 && cit_array[cit_count-1].ip == 0) // resize our array.
+        {
+                cit_count--;
+                cit_array = realloc(cit_array, cit_count*sizeof(cl_ip_tout));
+        }
+
+        if (match != NULL) // now that we've found our match.
+        {
+                match->count++;
+                if (match->count > 5)
+                {
+                        return; // ignore spammers.
+                }
+        }
+        else  // new client
+        {
+                for (i=0; i < cit_count; i++) // check for empty array slots.
+                {
+                        if (cit_array[i].ip == 0) // empty slot found.
+                        {
+                                match = &cit_array[i];
+                                break;
+                        }
+                }
+
+                if (match == NULL) // array full -> resizing array.
+                {
+                        cit_count++;
+                        cit_array = realloc(cit_array, cit_count*sizeof(cl_ip_tout));
+                        match = &cit_array[cit_count-1];
+                }
+
+                match->count = 1; // set data.
+                match->ip    = from_ip_as_int;
+                match->time  = svs.time + 2000;
+        }
+		
 	/*
 	 * Check whether Cmd_Argv(1) has a sane length. This was not done in the original Quake3 version which led
 	 * to the Infostring bug discovered by Luigi Auriemma. See http://aluigi.altervista.org/ for the advisory.
