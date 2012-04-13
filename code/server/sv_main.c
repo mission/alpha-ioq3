@@ -563,20 +563,6 @@ the simple info query.
 ================
 */
 
-/* Added per ip timeout! Rough fix */
-
-typedef struct cl_ip_tout
-{
-	uint8_t count;
-	uint32_t time;
-	uint32_t ip;
-
-} cl_ip_tout;
-
-cl_ip_tout *cit_array = 0;
-uint8_t     cit_count = 0;
-
-
 static void SVC_Status( netadr_t from ) {
 	char	player[1024];
 	char	status[MAX_MSGLEN];
@@ -605,65 +591,6 @@ static void SVC_Status( netadr_t from ) {
 	if ( SVC_RateLimit( &bucket, 10, 100 ) ) {
 		Com_DPrintf( "SVC_Status: rate limit exceeded, dropping request\n" );
 		return;
-	}
-
-		uint32_t from_ip_as_int = *((uint32_t*)from.ip);
-	cl_ip_tout *match = NULL;
-
-	// check for timed out clients.
-	// also check if the ip is already known (multiple queries or DRDOS)
-	for (i=0; i < cit_count; i++)
-	{
-		if (cit_array[i].time < svs.time) // timeout?
-		{
-			cit_array[i].ip = 0; // -> drop
-		}
-		else if (cit_array[i].ip == from_ip_as_int) // match found.
-		{
-			match = &cit_array[i];
-			break;
-		}
-	}
-
-	if (cit_count >= 32) // Prevent mass flooding. Max allowed packets: 32*5 per 2 seconds.
-		return;
-
-	// is the last entry of our array empty? If yes, drop.
-	if (cit_count > 0 && cit_array[cit_count-1].ip == 0) // resize our array.
-	{
-		cit_count--;
-		cit_array = realloc(cit_array, cit_count*sizeof(cl_ip_tout));
-	}
-
-	if (match != NULL) // now that we've found our match.
-	{
-		match->count++;
-		if (match->count > 5)
-		{
-			return; // ignore spammers.
-		}
-	}
-	else  // new client
-	{
-		for (i=0; i < cit_count; i++) // check for empty array slots.
-		{
-			if (cit_array[i].ip == 0) // empty slot found.
-			{
-				match = &cit_array[i];
-				break;
-			}
-		}
-
-		if (match == NULL) // array full -> resizing array.
-		{
-			cit_count++;
-			cit_array = realloc(cit_array, cit_count*sizeof(cl_ip_tout));
-			match = &cit_array[cit_count-1];
-		}
-
-		match->count = 1; // set data.
-		match->ip    = from_ip_as_int;
-		match->time  = svs.time + 2000;
 	}
 	
 	strcpy( infostring, Cvar_InfoString( CVAR_SERVERINFO ) );
@@ -711,64 +638,6 @@ void SVC_Info( netadr_t from ) {
 		return;
 	}
 
-	        uint32_t from_ip_as_int = *((uint32_t*)from.ip);
-        cl_ip_tout *match = NULL;
-
-        // check for timed out clients.
-        // also check if the ip is already known (multiple quries or DRDOS)
-        for (i=0; i < cit_count; i++)
-        {
-                if (cit_array[i].time < svs.time) // timeout?
-                {
-                        cit_array[i].ip = 0; // -> drop.
-                }
-                else if (cit_array[i].ip == from_ip_as_int) // match found.
-                {
-                        match = &cit_array[i];
-                        break;
-                }
-        }
-
-        if (cit_count >= 32) // Prevent mass flooding. Max allowed packets: 32*5 per 2 seconds.
-                return;
-
-        // is the last entry of our array empty? If yes, drop.
-        if (cit_count > 0 && cit_array[cit_count-1].ip == 0) // resize our array.
-        {
-                cit_count--;
-                cit_array = realloc(cit_array, cit_count*sizeof(cl_ip_tout));
-        }
-
-        if (match != NULL) // now that we've found our match.
-        {
-                match->count++;
-                if (match->count > 5)
-                {
-                        return; // ignore spammers.
-                }
-        }
-        else  // new client
-        {
-                for (i=0; i < cit_count; i++) // check for empty array slots.
-                {
-                        if (cit_array[i].ip == 0) // empty slot found.
-                        {
-                                match = &cit_array[i];
-                                break;
-                        }
-                }
-
-                if (match == NULL) // array full -> resizing array.
-                {
-                        cit_count++;
-                        cit_array = realloc(cit_array, cit_count*sizeof(cl_ip_tout));
-                        match = &cit_array[cit_count-1];
-                }
-
-                match->count = 1; // set data.
-                match->ip    = from_ip_as_int;
-                match->time  = svs.time + 2000;
-        }
 		
 	/*
 	 * Check whether Cmd_Argv(1) has a sane length. This was not done in the original Quake3 version which led
@@ -966,6 +835,143 @@ static void SVC_RemoteCommand( netadr_t from, msg_t *msg ) {
 
 /*
 =================
+SV_CheckDRDoS
+
+DRDoS stands for "Distributed Reflected Denial of Service".
+See here: http://www.lemuria.org/security/application-drdos.html
+
+Returns qfalse if we're good.  qtrue return value means we need to block.
+If the address isn't NA_IP, it's automatically denied.
+=================
+*/
+qboolean SV_CheckDRDoS(netadr_t from)
+{
+	netadr_t	exactFrom;
+	int		i;
+	floodBan_t	*ban;
+	int		oldestBan;
+	int		oldestBanTime;
+	int		globalCount;
+	int		specificCount;
+	receipt_t	*receipt;
+	int		oldest;
+	int		oldestTime;
+	static int	lastGlobalLogTime = 0;
+
+	// Usually the network is smart enough to not allow incoming UDP packets
+	// with a source address being a spoofed LAN address.  Even if that's not
+	// the case, sending packets to other hosts in the LAN is not a big deal.
+	// NA_LOOPBACK qualifies as a LAN address.
+	if (Sys_IsLANAddress(from)) { return qfalse; }
+
+	exactFrom = from;
+	if (from.type == NA_IP) {
+		from.ip[3] = 0; // xx.xx.xx.0
+	}
+	else {
+		// So we got a connectionless packet but it's not IPv4, so
+		// what is it?  I don't care, it doesn't matter, we'll just block it.
+		// This probably won't even happen.
+		return qtrue;
+	}
+	
+	// This quick exit strategy while we're being bombarded by getinfo/getstatus requests
+	// directed at a specific IP address doesn't really impact server performance.
+	// The code below does its duty very quickly if we're handling a flood packet.
+	ban = &svs.infoFloodBans[0];
+	oldestBan = 0;
+	oldestBanTime = 0x7fffffff;
+	for (i = 0; i < MAX_INFO_FLOOD_BANS; i++, ban++) {
+		if (svs.time - ban->time < 120000 && // Two minute ban.
+				NET_CompareBaseAdr(from, ban->adr)) {
+			ban->count++;
+			if (!ban->flood && ((svs.time - ban->time) >= 3000) && ban->count <= 5) {
+				Com_DPrintf("Unban info flood protect for address %s, they're not flooding\n",
+						NET_AdrToString(exactFrom));
+				Com_Memset(ban, 0, sizeof(floodBan_t));
+				oldestBan = i;
+				break;
+			}
+			if (ban->count >= 180) {
+				Com_DPrintf("Renewing info flood ban for address %s, received %i getinfo/getstatus requests in %i milliseconds\n",
+						NET_AdrToString(exactFrom), ban->count, svs.time - ban->time);
+				ban->time = svs.time;
+				ban->count = 0;
+				ban->flood = qtrue;
+			}
+			return qtrue;
+		}
+		if (ban->time < oldestBanTime) {
+			oldestBanTime = ban->time;
+			oldestBan = i;
+		}
+	}
+
+	
+	
+
+	// Count receipts in last 2 seconds.
+	globalCount = 0;
+	specificCount = 0;
+	receipt = &svs.infoReceipts[0];
+	oldest = 0;
+	oldestTime = 0x7fffffff;
+	for (i = 0; i < MAX_INFO_RECEIPTS; i++, receipt++) {
+		if (receipt->time + 2000 > svs.time) {
+			if (receipt->time) {
+				// When the server starts, all receipt times are at zero.  Furthermore,
+				// svs.time is close to zero.  We check that the receipt time is already
+				// set so that during the first two seconds after server starts, queries
+				// from the master servers don't get ignored.  As a consequence a potentially
+				// unlimited number of getinfo+getstatus responses may be sent during the
+				// first frame of a server's life.
+				globalCount++;
+			}
+			if (NET_CompareBaseAdr(from, receipt->adr)) {
+				specificCount++;
+			}
+		}
+		if (receipt->time < oldestTime) {
+			oldestTime = receipt->time;
+			oldest = i;
+		}
+	}
+	
+	if (specificCount >= 3) { // Already sent 3 to this IP in last 2 seconds.
+		Com_Printf("Possible DRDoS attack to address %s, putting into temporary getinfo/getstatus ban list\n",
+					NET_AdrToString(exactFrom));
+		ban = &svs.infoFloodBans[oldestBan];
+		ban->adr = from;
+		ban->time = svs.time;
+		ban->count = 0;
+		ban->flood = qfalse;
+		return qtrue;
+	}
+
+	if (globalCount == MAX_INFO_RECEIPTS) { // All receipts happened in last 2 seconds.
+		// Detect time wrap where the server sets time back to zero.  Problem
+		// is that we're using a static variable here that doesn't get zeroed out when
+		// the time wraps.  TTimo's way of doing this is casting everything including
+		// the difference to unsigned int, but I think that's confusing to the programmer.
+		if (svs.time < lastGlobalLogTime) {
+			lastGlobalLogTime = 0;
+		}
+		if (lastGlobalLogTime + 1000 <= svs.time) { // Limit one log every second.
+			Com_Printf("Detected flood of arbitrary getinfo/getstatus connectionless packets\n");
+			lastGlobalLogTime = svs.time;
+		}
+		return qtrue;
+	}
+
+
+	receipt = &svs.infoReceipts[oldest];
+	receipt->adr = from;
+	receipt->time = svs.time;
+	return qfalse;
+}
+
+/*
+=================
 SV_ConnectionlessPacket
 
 A connectionless packet has four leading 0xff
@@ -989,11 +995,12 @@ static void SV_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 	Cmd_TokenizeString( s );
 
 	c = Cmd_Argv(0);
-	Com_DPrintf ("SV packet %s : %s\n", NET_AdrToString(from), c);
 
 	if (!Q_stricmp(c, "getstatus")) {
+		if (SV_CheckDRDoS(from)) { return; }
 		SVC_Status( from );
-  } else if (!Q_stricmp(c, "getinfo")) {
+	} else if (!Q_stricmp(c, "getinfo")) {
+		if (SV_CheckDRDoS(from)) { return; }
 		SVC_Info( from );
 	} else if (!Q_stricmp(c, "getchallenge")) {
 		SV_GetChallenge(from);
@@ -1013,6 +1020,13 @@ static void SV_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 		Com_DPrintf ("bad connectionless packet from %s:\n%s\n",
 			NET_AdrToString (from), s);
 	}
+	
+	// We moved this from the top of this function to the bottom.
+	// During a DRDoS attack we get thousands of lines of packets
+	// that just garble the screen.  Since we return from this
+	// function early if a DRDoS is detected, we don't print a line
+	// for each attacking packet anymore.
+	Com_DPrintf ("SV packet %s : %s\n", NET_AdrToString(from), c);
 }
 
 //============================================================================
