@@ -99,6 +99,21 @@ static cvar_t *Cvar_FindVar( const char *var_name ) {
 	return NULL;
 }
 
+cvar_t *Cvar_FindVar2( const char *var_name ) {
+	cvar_t	*var;
+	long hash;
+
+	hash = generateHashValue(var_name);
+	
+	for (var=hashTable[hash] ; var ; var=var->hashNext) {
+		if (!Q_stricmp(var_name, var->name)) {
+			return var;
+		}
+	}
+
+	return NULL;
+}
+
 /*
 ============
 Cvar_VariableValue
@@ -586,8 +601,10 @@ cvar_t *Cvar_Set2( const char *var_name, const char *value, qboolean force ) {
 		}
 	}
 
-	if (!strcmp(value, var->string))
+	if (!strcmp(value, var->string)) {
+		Com_Printf("%s was not changed\n", var_name);
 		return var;		// not changed
+	}
 
 	var->modified = qtrue;
 	var->modificationCount++;
@@ -597,6 +614,8 @@ cvar_t *Cvar_Set2( const char *var_name, const char *value, qboolean force ) {
 	var->string = CopyString(value);
 	var->value = atof (var->string);
 	var->integer = atoi (var->string);
+	
+	Com_Printf("%s is now set to %s\n", var->name, var->string);
 
 	return var;
 }

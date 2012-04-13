@@ -1865,6 +1865,32 @@ static void SV_StopServerDemo_f(void)
 	}
 }
 
+/*
+===================
+SV_GetCvarValues
+get cvar values for multiple cvars
+@mission: GetCvarValues
+===================
+*/
+static void SV_GetCvarValues_f( void ) {
+	int i;
+	cvar_t *cv;
+	
+	if(Cmd_Argc() < 2)
+	{
+		Com_Printf ("usage: cvarvalue <variable> <optional variables separated by spaces>\n");
+		return;
+	}
+	Com_Printf("Cvars:\n______\n");
+	for(i=1;i<Cmd_Argc();i++) {
+		cv = Cvar_FindVar2(Cmd_Argv(i));
+		if (cv) {
+			Com_Printf("\\%s\\%s\n", cv->name, cv->string);
+		}
+	}
+	Com_Printf("\n");
+}
+
 //===========================================================
 
 /*
@@ -1940,6 +1966,8 @@ void SV_AddOperatorCommands( void ) {
 
 	Cmd_AddCommand("startserverdemo", SV_StartServerDemo_f);
 	Cmd_AddCommand("stopserverdemo", SV_StopServerDemo_f);
+	
+	Cmd_AddCommand("cvarvalue", SV_GetCvarValues_f);
 }
 
 /*
