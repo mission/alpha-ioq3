@@ -86,6 +86,8 @@ int rconWhitelistCount = 0;
 cvar_t	*sv_tellprefix;
 cvar_t	*sv_sayprefix;
 
+cvar_t	*sv_autodemo;
+
 /*
 =============================================================================
 
@@ -1217,6 +1219,27 @@ static qboolean SV_CheckPaused( void ) {
 
 /*
 ==================
+SV_AutoDemo
+@mission: auto demo feature
+==================
+*/
+void SV_CheckAutoDemo( void ) {
+	int i;
+	client_t *cl;
+	cvar_t *logid;
+	logid = Cvar_FindVar2("g_logroll");
+	for(i=0,cl=svs.clients;i<sv_maxclients->integer;i++,cl++) {
+		if (cl->state != CS_ACTIVE) {
+			continue;
+		}
+		if (!cl->demo_recording) {
+			Cbuf_ExecuteText(EXEC_NOW, va("startserverdemo %d %d_%s_%d_%d", cl-svs.clients, logid->integer-1, Info_ValueForKey(cl->userinfo, "cl_guid"), cl-svs.clients, (int)time(NULL)));
+		}
+	}
+}
+
+/*
+==================
 SV_Frame
 
 Player movement occurs as a result of packet events, which
@@ -1339,6 +1362,16 @@ void SV_Frame( int msec ) {
 
 	// send a heartbeat to the master if needed
 	SV_MasterHeartbeat();
+	
+	static int autodemo=0;
+	if (sv_autodemo->integer) {
+		autodemo++;
+		if (autodemo >= sv_autodemo->integer) {//10seconds
+			autodemo = 0;
+			Com_Printf("Running Autodemo Check!\n");
+			SV_CheckAutoDemo();
+		}
+	}
 }
 
 //============================================================================

@@ -315,6 +315,8 @@ extern	int rconWhitelistCount;
 extern	cvar_t	*sv_sayprefix;
 extern	cvar_t	*sv_tellprefix;
 
+extern	cvar_t	*sv_autodemo;
+
 #ifdef USE_VOIP
 extern	cvar_t	*sv_voip;
 #endif

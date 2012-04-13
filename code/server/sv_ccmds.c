@@ -1709,7 +1709,7 @@ static void SV_StartRecordOne(client_t *client, char *filename)
 	
 	SVD_StartDemoFile(client, path);
 
-	SV_SendServerCommand(client, "print \"[!] %s\"\n", sv_demonotice->string);
+	SV_SendServerCommand(client, "print \"%s\"\n", sv_demonotice->string);
 
 	Com_Printf("startserverdemo: recording %s to %s\n", client->name, path);
 }
