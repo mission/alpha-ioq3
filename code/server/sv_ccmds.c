@@ -582,7 +582,8 @@ static int SV_RehashServerBanFile(cvar_t *fileName, int maxEntries, serverBan_t 
 {
 	int index, filelen;
 	fileHandle_t readfrom;
-	char *textbuf, *curpos, *maskpos, *newlinepos, *endpos;
+	char *textbuf, *curpos, *maskpos, *newlinepos, *endpos, *reasonpos;
+	char reason[128];
 	char filepath[MAX_QPATH];
 	int numEntries = 0;
 
@@ -624,15 +625,21 @@ static int SV_RehashServerBanFile(cvar_t *fileName, int maxEntries, serverBan_t 
 
 		*maskpos = '\0';
 		maskpos++;
-
-		// find the end of the subnet specifier
-		for(newlinepos = maskpos; newlinepos < endpos && *newlinepos != '\n'; newlinepos++);
-
-		if(newlinepos >= endpos)
+		
+		
+		int j = 0;
+		for(reasonpos = maskpos+2; reasonpos < endpos && *reasonpos != '\n'; reasonpos++){ 
+			if (j < 128) {
+				reason[j] = *reasonpos;
+				j++;
+			}
+		};
+		
+		if(reasonpos >= endpos)
 			break;
-
-		*newlinepos = '\0';
-
+		
+		*reasonpos = '\0';
+		reason[j] = '\0';
 		if(NET_StringToAdr(curpos + 2, &buffer[index].ip, NA_UNSPEC))
 		{
 			buffer[index].isexception = (curpos[0] != '0');
@@ -648,9 +655,15 @@ static int SV_RehashServerBanFile(cvar_t *fileName, int maxEntries, serverBan_t 
 			{
 				buffer[index].subnet = 128;
 			}
+			if (!strlen(reason)) {
+				//Com_Printf("%d: reasonpos[0] = \'\\0\'\n", index);
+				strncpy(buffer[index].reason, sv_bandefaultreason->string, sizeof(buffer[index].reason));
+			} else {
+				strncpy(buffer[index].reason, reason, sizeof(buffer[index].reason));
+			}
 		}
 
-		curpos = newlinepos + 1;
+		curpos = reasonpos + 1;
 	}
 
 	Z_Free(textbuf);
@@ -689,9 +702,13 @@ static void SV_WriteBans(void)
 		for(index = 0; index < serverBansCount; index++)
 		{
 			curban = &serverBans[index];
-			
-			Com_sprintf(writebuf, sizeof(writebuf), "%d %s %d\n",
-				    curban->isexception, NET_AdrToString(curban->ip), curban->subnet);
+			if (strlen(curban->reason)) {
+				Com_sprintf(writebuf, sizeof(writebuf), "%d %s %d %s\n",
+						curban->isexception, NET_AdrToString(curban->ip), curban->subnet, curban->reason);
+			} else {
+				Com_sprintf(writebuf, sizeof(writebuf), "%d %s %d %s\n",
+						curban->isexception, NET_AdrToString(curban->ip), curban->subnet, sv_bandefaultreason->string);
+			}
 			FS_Write(writebuf, strlen(writebuf), writeto);
 		}
 
@@ -781,13 +798,14 @@ static void SV_AddBanToList(qboolean isexception)
 	char addy2[NET_ADDRSTRMAXLEN];
 	netadr_t ip;
 	int index, argc, mask;
+	char reason[SERVER_MAXBANS_REASON_LEN];
 	serverBan_t *curban;
 	
 	argc = Cmd_Argc();
 	
-	if(argc < 2 || argc > 3)
+	if(argc < 2)
 	{
-		Com_Printf ("Usage: %s (ip[/subnet] | clientnum [subnet])\n", Cmd_Argv(0));
+		Com_Printf ("Usage: %s (ip[/subnet] | clientnum [subnet]) [optional reason]\n", Cmd_Argv(0));
 		return;
 	}
 
@@ -807,6 +825,11 @@ static void SV_AddBanToList(qboolean isexception)
 		{
 			Com_Printf("Error: Invalid address %s\n", banstring);
 			return;
+		}
+		if (argc > 2) {
+			strncpy(reason, Cmd_ArgsFrom(2), sizeof(reason));
+		} else {
+			strncpy(reason, sv_bandefaultreason->string, sizeof(reason));
 		}
 	}
 	else
@@ -832,21 +855,49 @@ static void SV_AddBanToList(qboolean isexception)
 		
 		if(argc == 3)
 		{
-			mask = atoi(Cmd_Argv(2));
-			
-			if(ip.type == NA_IP)
-			{
-				if(mask < 1 || mask > 32)
-					mask = 32;
-			}
-			else
-			{
-				if(mask < 1 || mask > 128)
-					mask = 128;
+			if (strlen(Cmd_Argv(2)) < 4) {
+				mask = atoi(Cmd_Argv(2));
+				
+				if(ip.type == NA_IP)
+				{
+					if(mask < 1 || mask > 32)
+						mask = 32;
+				}
+				else
+				{
+					if(mask < 1 || mask > 128)
+						mask = 128;
+				}
+			} else {
+				strncpy(reason, Cmd_ArgsFrom(2), sizeof(reason));
 			}
 		}
-		else
-			mask = (ip.type == NA_IP6) ? 128 : 32;
+		else {
+			if (argc > 3) {
+				if (strlen(Cmd_Argv(2)) < 4) {
+					mask = atoi(Cmd_Argv(2));
+				
+					if(ip.type == NA_IP)
+					{
+						if(mask < 1 || mask > 32)
+							mask = 32;
+					}
+					else
+					{
+						if(mask < 1 || mask > 128)
+							mask = 128;
+					}
+					strncpy(reason, Cmd_ArgsFrom(3), sizeof(reason));
+				} else {
+					strncpy(reason, Cmd_ArgsFrom(2), sizeof(reason));
+				}
+				mask = (ip.type == NA_IP6) ? 128 : 32;
+				strncpy(reason, sv_bandefaultreason->string, sizeof(reason));
+			}
+			else if (argc < 3) {
+				strncpy(reason, sv_bandefaultreason->string, sizeof(reason));
+			}
+		}
 	}
 
 	if(ip.type != NA_IP && ip.type != NA_IP6)
@@ -901,13 +952,14 @@ static void SV_AddBanToList(qboolean isexception)
 	serverBans[serverBansCount].ip = ip;
 	serverBans[serverBansCount].subnet = mask;
 	serverBans[serverBansCount].isexception = isexception;
+	strncpy(serverBans[serverBansCount].reason, reason, sizeof(serverBans[serverBansCount].reason));
 	
 	serverBansCount++;
 	
 	SV_WriteBans();
 
-	Com_Printf("Added %s: %s/%d\n", isexception ? "ban exception" : "ban",
-		   NET_AdrToString(ip), mask);
+	Com_Printf("Added %s: %s/%d : %s\n", isexception ? "ban exception" : "ban",
+		   NET_AdrToString(ip), mask, reason);
 }
 
 /*
@@ -1017,8 +1069,8 @@ static void SV_ListBans_f(void)
 		{
 			count++;
 
-			Com_Printf("Ban #%d: %s/%d\n", count,
-				    NET_AdrToString(ban->ip), ban->subnet);
+			Com_Printf("Ban #%d: %s/%d : %s\n", count,
+				    NET_AdrToString(ban->ip), ban->subnet, ban->reason);
 		}
 	}
 	// List all exceptions
@@ -1891,6 +1943,17 @@ static void SV_GetCvarValues_f( void ) {
 	Com_Printf("\n");
 }
 
+static void SV_ListQueue_f(void) {
+	int i;
+	for(i=0;i<QueueCount;i++) {
+		if (!i) {
+			Com_Printf("Connection IP's In Queue\n_____________________\n");
+		}
+		Com_Printf("%d: %s : %d\n", i+1, NET_AdrToString (Queue[i]), svs.time-QueueLast[i]);
+	}
+
+}
+
 //===========================================================
 
 /*
@@ -1968,6 +2031,8 @@ void SV_AddOperatorCommands( void ) {
 	Cmd_AddCommand("stopserverdemo", SV_StopServerDemo_f);
 	
 	Cmd_AddCommand("cvarvalue", SV_GetCvarValues_f);
+	
+	Cmd_AddCommand("listqueue", SV_ListQueue_f);
 }
 
 /*

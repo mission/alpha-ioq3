@@ -267,6 +267,23 @@ static qboolean SV_IsBanned(netadr_t *from, qboolean isexception)
 	return qfalse;
 }
 
+char *SV_GetBannedReason(netadr_t *from)
+{
+	int index;
+	serverBan_t *curban;
+	
+	for(index = 0; index < serverBansCount; index++)
+	{
+		curban = &serverBans[index];
+		
+		if(NET_CompareBaseAdrMask(curban->ip, *from, curban->subnet))
+			return curban->reason;
+		
+	}
+	
+	return sv_bandefaultreason->string;
+}
+
 /*
 ==================
 SV_ApproveGuid
@@ -297,6 +314,16 @@ qboolean SV_ApproveGuid( const char *guid) {
 	return qtrue;
 }
 
+int SV_GetQueuePosition( netadr_t from ) {
+	int i;
+	for(i=0;i<QueueCount;i++) {
+		if (NET_CompareBaseAdr( from, Queue[i])) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 /*
 ==================
 SV_DirectConnect
@@ -304,7 +331,7 @@ SV_DirectConnect
 A "connect" OOB command has been received
 ==================
 */
-
+#define MAX_QUEUE 10
 void SV_DirectConnect( netadr_t from ) {
 	char		userinfo[MAX_INFO_STRING];
 	int			i;
@@ -320,13 +347,15 @@ void SV_DirectConnect( netadr_t from ) {
 	intptr_t		denied;
 	int			count;
 	char		*ip;
+	char *reason;
 
 	Com_DPrintf ("SVC_DirectConnect ()\n");
 	
 	// Check whether this client is banned.
 	if(SV_IsBanned(&from, qfalse))
 	{
-		NET_OutOfBandPrint(NS_SERVER, from, "print\nYou are banned from this server.\n");
+		
+		NET_OutOfBandPrint(NS_SERVER, from, "print\n%s\n", SV_GetBannedReason(&from)); //@mission: ban reason
 		return;
 	}
 
@@ -481,14 +510,25 @@ void SV_DirectConnect( netadr_t from ) {
 	}
 
 	newcl = NULL;
+	int quepos;
 	for ( i = startIndex; i < sv_maxclients->integer ; i++ ) {
 		cl = &svs.clients[i];
 		if (cl->state == CS_FREE) {
-			newcl = cl;
-			break;
+			if (QueueCount) {
+				quepos = SV_GetQueuePosition(from);
+				if (quepos == 0) {
+					QueueLast[quepos] =svs.time-4000;
+					newcl = cl;
+					break;
+				}
+			} else {
+				newcl = cl;
+				break;
+			}
 		}
 	}
-
+	
+	
 	if ( !newcl ) {
 		if ( NET_IsLocalAddress( from ) ) {
 			count = 0;
@@ -509,8 +549,23 @@ void SV_DirectConnect( netadr_t from ) {
 			}
 		}
 		else {
-			NET_OutOfBandPrint( NS_SERVER, from, "print\nServer is full.\n" );
-			Com_DPrintf ("Rejected a connection.\n");
+			if (QueueCount >= MAX_QUEUE) {
+				NET_OutOfBandPrint( NS_SERVER, from, "print\nServer is full.\n" );
+				Com_DPrintf ("Rejected a connection.\n");
+			} else {
+				int pos;
+				pos = SV_GetQueuePosition(from);
+				if (pos >= 0) {
+					QueueLast[pos] = svs.time;
+					NET_OutOfBandPrint( NS_SERVER, from, "print\n\nYou are %d/%d in the Queue.\n", pos+1, MAX_QUEUE);
+				} else {
+					Queue[QueueCount] = from;
+					QueueLast[QueueCount] = svs.time;
+					int place = QueueCount;
+					QueueCount++;
+					NET_OutOfBandPrint( NS_SERVER, from, "print\n\nYou are %d/%d in the Queue.\n", place+1, MAX_QUEUE);
+				}
+			}
 			return;
 		}
 	}

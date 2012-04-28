@@ -88,6 +88,13 @@ cvar_t	*sv_sayprefix;
 
 cvar_t	*sv_autodemo;
 
+cvar_t	*sv_bandefaultreason;
+
+#define MAX_QUEUE 10
+netadr_t Queue[MAX_QUEUE];
+int QueueLast[MAX_QUEUE];
+int QueueCount;
+
 /*
 =============================================================================
 
@@ -1252,6 +1259,27 @@ void SV_CheckAutoDemo( void ) {
 	}
 }
 
+void SV_UpdateQueue( void ) {
+	netadr_t temp[MAX_QUEUE];
+	int templast[MAX_QUEUE];
+	int i,j=0;
+	for(i=0;i<QueueCount;i++) {
+		if (svs.time-QueueLast[i] > 4000) {
+			Com_Printf("Queue Position %d for %s has timed-out! - %d ms\n", i, NET_AdrToString (Queue[i]), svs.time-QueueLast[i]);
+			continue;
+		}
+		temp[j] = Queue[i];
+		templast[j] = QueueLast[i];
+		j++;
+	}
+	QueueCount = 0;
+	for(i=0;i<j;i++) {
+		Queue[i] = temp[i];
+		QueueLast[i] = templast[i];
+		QueueCount++;
+	}
+}
+
 /*
 ==================
 SV_Frame
@@ -1384,6 +1412,15 @@ void SV_Frame( int msec ) {
 			autodemo = 0;
 			Com_Printf("Running Autodemo Check!\n");
 			SV_CheckAutoDemo();
+		}
+	}
+	
+	static int updatequeue=0;
+	if (QueueCount) {
+		updatequeue++;
+		if (updatequeue >= 80) {// 4 seconds
+			SV_UpdateQueue();
+			updatequeue = 0;
 		}
 	}
 }

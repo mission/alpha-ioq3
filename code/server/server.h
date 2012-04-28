@@ -264,12 +264,15 @@ typedef struct {
 } serverStatic_t;
 
 #define SERVER_MAXBANS	16384
+#define SERVER_MAXBANS_REASON_LEN 128
 // Structure for managing bans
 typedef struct
 {
 	netadr_t ip;
 	// For a CIDR-Notation type suffix
 	int subnet;
+	
+	char reason[SERVER_MAXBANS_REASON_LEN];
 	
 	qboolean isexception;
 } serverBan_t;
@@ -336,6 +339,13 @@ extern	cvar_t	*sv_sayprefix;
 extern	cvar_t	*sv_tellprefix;
 
 extern	cvar_t	*sv_autodemo;
+
+extern	cvar_t	*sv_bandefaultreason;
+
+#define MAX_QUEUE 10
+extern	netadr_t Queue[MAX_QUEUE];
+extern	int QueueLast[MAX_QUEUE];
+extern	int QueueCount;
 
 #ifdef USE_VOIP
 extern	cvar_t	*sv_voip;
