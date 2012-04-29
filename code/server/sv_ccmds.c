@@ -582,7 +582,7 @@ static int SV_RehashServerBanFile(cvar_t *fileName, int maxEntries, serverBan_t 
 {
 	int index, filelen;
 	fileHandle_t readfrom;
-	char *textbuf, *curpos, *maskpos, *newlinepos, *endpos, *reasonpos;
+	char *textbuf, *curpos, *maskpos, *endpos, *reasonpos;
 	char reason[128];
 	char filepath[MAX_QPATH];
 	int numEntries = 0;
@@ -1943,13 +1943,87 @@ static void SV_GetCvarValues_f( void ) {
 	Com_Printf("\n");
 }
 
+//copy of Info_ValueForKey function with modifications
+/*
+==================
+ParseString
+Parses a userinfo like string into cvarname and cvarvalue and sets it.
+==================
+*/
+void ParseString( const char *s) {
+	char	pkey[BIG_INFO_KEY];
+	static	char value[2][BIG_INFO_VALUE];	// use two buffers so compares
+											// work without stomping on each other
+	static	int	valueindex = 0;
+	char	*o;
+	
+	if ( !s ) {
+		return;
+	}
+
+	if ( strlen( s ) >= BIG_INFO_STRING ) {
+		Com_Error( ERR_DROP, "ParseString: oversize parsestring" );
+	}
+
+	valueindex ^= 1;
+	if (*s == '\\')
+		s++;
+	while (1)
+	{
+		o = pkey;
+		while (*s != '\\')
+		{
+			if (!*s)
+				return;
+			*o++ = *s++;
+		}
+		*o = 0;
+		s++;
+
+		o = value[valueindex];
+
+		while (*s != '\\' && *s)
+		{
+			*o++ = *s++;
+		}
+		*o = 0;
+		
+		Cbuf_ExecuteText(EXEC_NOW, va("set %s \"%s\"\n", pkey, value[valueindex]));
+
+		if (!*s)
+			break;
+		s++;
+	}
+}
+/*
+==================
+SV_SetCvarValues_f
+set multiple cvars values in a single command using userinfo string format of /cvarname/cvarvalue etc..
+==================
+*/
+static void SV_SetCvarValues_f( void ) {
+	
+	if (Cmd_Argc() < 2) 
+	{
+		Com_Printf("usage: cvarsetvalue \\<variable>\\<value>[\\<optional variable>\\<optional variable value>etc..]\n");
+		return;
+	}
+	ParseString(Cmd_ArgsFrom(1));
+}
+
+/*
+==================
+SV_ListQueue_f
+lists current ip's in the Connection Queue
+==================
+*/
 static void SV_ListQueue_f(void) {
 	int i;
 	for(i=0;i<QueueCount;i++) {
 		if (!i) {
 			Com_Printf("Connection IP's In Queue\n_____________________\n");
 		}
-		Com_Printf("%d: %s : %d\n", i+1, NET_AdrToString (Queue[i]), svs.time-QueueLast[i]);
+		Com_Printf("%d: %s\n", i+1, NET_AdrToString (Queue[i]));
 	}
 
 }
@@ -2031,6 +2105,7 @@ void SV_AddOperatorCommands( void ) {
 	Cmd_AddCommand("stopserverdemo", SV_StopServerDemo_f);
 	
 	Cmd_AddCommand("cvarvalue", SV_GetCvarValues_f);
+	Cmd_AddCommand("cvarsetvalue", SV_SetCvarValues_f);
 	
 	Cmd_AddCommand("listqueue", SV_ListQueue_f);
 }
