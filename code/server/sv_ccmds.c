@@ -1727,7 +1727,7 @@ static void SV_NameServerDemo(char *filename, int length, const client_t *client
 			// file extension
 			Q_snprintf(
 				filename, length-1, "serverdemos/%.4d-%.2d-%.2d_%.2d-%.2d-%.2d_%s_%d.dm_%d",
-				time.tm_year+1900, time.tm_mon, time.tm_mday,
+				time.tm_year+1900, time.tm_mon+1, time.tm_mday,
 				time.tm_hour, time.tm_min, time.tm_sec,
 				playername,
 				Sys_Milliseconds(),
@@ -1760,8 +1760,9 @@ static void SV_StartRecordOne(client_t *client, char *filename)
 	SV_NameServerDemo(path, sizeof(path), client, filename);
 	
 	SVD_StartDemoFile(client, path);
-
-	SV_SendServerCommand(client, "print \"%s\"\n", sv_demonotice->string);
+	if (sv_demonotice->string) {
+		SV_SendServerCommand(client, "print \"%s\"\n", sv_demonotice->string);
+	}
 
 	Com_Printf("startserverdemo: recording %s to %s\n", client->name, path);
 }
